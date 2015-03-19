@@ -1,0 +1,210 @@
+library('pracma')
+library(foreach)
+library(doParallel)
+cl <- makeCluster(2)
+registerDoParallel(cl)
+source("monitor.R")
+install.packages("sets")
+library('sets')
+ 
+#jaccardSimilarity=function(trip,driver)
+#{
+#  currentSpeed=trunc(speedDistribution(trip))
+#  jaccardCumul=0
+#  for(i in 1:200)
+#  {
+#    newSpeed=trunc(speedDistribution(monitor(driver,i,F)))
+#    union=union(as.numeric(currentSpeed),as.numeric(newSpeed))
+#    intersect=intersect(as.numeric(currentSpeed),as.numeric(newSpeed))
+#    j=length(intersect)/length(union)
+#    jaccardCumul=jaccardCumul+j
+#  }
+#  return(jaccardCumul-1)
+#}
+
+#goldenRatio=function(trip)
+#{
+#  dataFrame=data.frame(trip$x,trip$y)
+  # plot(trip$x,trip$y,col="blue",pch=2,cex=0.1)
+#  kmeansObj=kmeans(dataFrame,centers=1)
+#  #points(kmeansObj$centers, col = 1, pch = 3, cex = 3, lwd = 3)
+#  centroid=kmeansObj$center
+#  a=dist(rbind(as.matrix(trip[1,]),centroid),method="euclidean")
+#  b=dist(rbind(centroid,as.matrix(trip[dim(trip)[1],])),method="euclidean")
+#  tripRatio=(a+b)/max(a,b)
+#  diff=tripRatio-1.618
+#  return(diff)
+#}  
+speedDistributionQuantiles <- function(trip)
+{
+  vitesse = 3.6*sqrt(diff(trip$x,8,1)^2 + diff(trip$y,8,1)^2)/20
+  return(quantile(vitesse, seq(0.05,1, by = 0.017)))
+}
+pompeiuHausdorff=function(trip)
+{
+  
+  pompeiuHausdorff=hausdorff_dist(trip$x,trip$y)  
+  return(pompeiuHausdorff)
+  
+}
+
+complexFeature=function(trip)
+{
+  y=diff(trip$y,1,1)
+  x=diff(trip$x,1,1)
+  x= ifelse(x==0,0.1,x)
+  slope=y/x
+  speed = sqrt(diff(trip$x,1,1)^2 + diff(trip$y,1,1)^2)
+  c=slope*speed
+  return(sd(c))
+}
+#  feature acc  avg
+accelerationAvg=function(trip)
+{
+  speed = sqrt(diff(trip$x,1,1)^2 + diff(trip$y,1,1)^2)
+  acc=diff(speed,1,1)
+  return(mean(acc))
+}
+#standard deviation of acceleration
+accelerationSd=function(trip)
+{
+  speed = sqrt(diff(trip$x,1,1)^2 + diff(trip$y,1,1)^2)
+  acc=diff(speed,1,1)
+  return(sd(acc))
+}
+#maximum speed
+speedMax=function(trip)
+{
+  
+  speed = sqrt(diff(trip$x,1,1)^2 + diff(trip$y,1,1)^2)
+  max=max(speed)
+  return(max)
+}
+#returns the  average of  the speed  measured  from one point to another
+#since  the time is  zero  the speed is equal  with the distance  so we   compute  the euclidian distance(l2 norm)
+speedDistributionAvg <- function(trip)
+{
+  vitesse = 3.6*sqrt(diff(trip$x,1,1)^2 + diff(trip$y,1,1)^2)/20
+  # return(quantile(vitesse, seq(0.05,1, by = 0.1)))
+  return(mean(vitesse))
+}
+#mileage is   the sum of the lengths from one point to another
+#this  feature it  is simple the   length of the trip
+mileage=function(trip)
+{
+  mil=  sum(sqrt(diff(trip$x,1,1)^2 + diff(trip$y,1,1)^2))
+  return(mil)
+}
+#we know  that  the  coordinates  are  gathered from a gps each second
+#so we create a feature that  represents  the total time
+#it  is simple the  the number of columns  in the csv  files dim(dataframe) returns on  the  first index the number of columns
+
+triptime=function(trip)
+{
+  t=dim(trip)[1]
+  return(t)
+}
+speedVariance=function(trip)
+{
+  
+  vitesse = 3.6*sqrt(diff(trip$x,1,1)^2 + diff(trip$y,1,1)^2)/20
+  v=var(vitesse)
+  return(v)
+}
+panta=function(trip)
+{  
+  
+  y=diff(trip$y,20,1)
+  x=diff(trip$x,20,1)
+  x= ifelse(x==0,0.1,x)
+  slope=y/x
+  
+  return(quantile(slope, seq(0.05,1, by = 0.05)))
+  
+}
+
+
+#this  function  returns   euclidian distanrce between  2  consecutive   points from  the  trip
+
+speedDistribution <- function(trip)
+{
+  speed = sqrt(diff(trip$x,1,1)^2 + diff(trip$y,1,1)^2)
+  return(speed)
+} 
+
+#here is onicescu energy(sum of  squared probabilities) for the speed
+onicescuEnergySpeed=function(trip)
+{
+#calls  the  speedDistribution function and  stores  the  speed's in a variable called  s
+s=speedDistribution(trip)
+#here are  computed  the probabilities of rounded  speeds
+#table() counts  how many elements are  from each class
+probabilities=table(round(s))/length(s)
+onicescu=sum(probabilities^2)
+#I loged it   so  the onicescu  energy looks  more  gaussian
+return(log10(onicescu))
+  
+}
+#I compute  the slope  for  each point(y2-y1)/(x2-x1) diff  returns  differences of consecutive elements
+panta=function(trip)
+{  
+   
+   y=diff(trip$y,1,1)
+   x=diff(trip$x,1,1)
+  x= ifelse(x==0,0.1,x)#correction in case x  is o  we will have  -inf which we don;t wan't
+   slope=y/x
+  
+  return(slope)
+   
+}
+#computes onicescu energy for  the  array(vector) with  slopes(I compute slope in order to see  the curvature  of the trip)
+onicescuEnergySlope=function(trip)
+{
+s=panta(trip)
+probabilities=table(round(s))/length(s)
+onicescu=sum(probabilities^2)
+return(onicescu)
+  
+}
+ #set the working directory to  be the desktop since  there  is the  drivers folder
+setwd("C:/Users/Home/Desktop")
+ #stores  the  number of the  folders  from drivers folder
+drivers = list.files("drivers")
+ 
+ #foreach driver
+for(sample in drivers)
+  {
+  t0=proc.time()
+  setwd("C:/Users/Home/Desktop")
+  #makes a  list  with  all the oder drivers that  have number  different  from the current one(called sample)
+randomDrivers = drivers[-which(drivers==sample)]
+#creates  data measuremenets labeled  with 0  since  all  of them  are different  from the current driver
+refData = NULL
+target = 0#somkeind of y (label)
+names(target) = "target"
+#foreach of  all other drivers
+ 
+for(driver in randomDrivers)
+{
+  dirPath = paste0("drivers/", driver, '/')
+ 
+  #get one random  trip  from the 200 trips
+    i=sample(1:200,1)
+    trip = read.csv(paste0(dirPath, i, ".csv"))
+	#we create  the  features  onicescu energy for  speed =something like x1, for slope something  like  x2
+    features = c(speedDistributionQuantiles(trip),onicescuEnergySpeed(trip), onicescuEnergySlope(trip),triptime(trip),speedVariance(trip),speedDistributionAvg(trip),(speedDistributionAvg (trip))^2,(speedDistributionAvg (trip))^3,mileage(trip),accelerationSd(trip),speedMax(trip),accelerationAvg(trip),complexFeature(trip),pompeiuHausdorff(trip),target)
+    refData = rbind(refData, features)
+	#concatanes  the rows
+    
+  gc()
+  
+}
+ 
+setwd("C:/Users/Home/Desktop/test")
+print(sample)
+write.csv(refData,paste("sampleFordriver",sample,".csv"))
+t1=proc.time()-t0
+print(t1)
+}
+
+ 
